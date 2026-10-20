@@ -34,7 +34,6 @@
   .item .plus{font-size:14px}
   .item .meta{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;white-space:nowrap}
   footer{margin-top:96px;padding-top:24px;border-top:1px solid var(--line);display:flex;justify-content:space-between;font-size:10px;color:var(--muted);letter-spacing:0.2em;text-transform:uppercase}
-  pre{background:#0f0f0f;border:1px solid var(--line);padding:16px;overflow:auto;font-size:11px;color:#9a9a9a;margin:24px 0;line-height:1.5}
   a{color:var(--muted);text-decoration:underline}
 </style>
 </head>
@@ -58,75 +57,86 @@
     <textarea id="plus" placeholder="Mi +1 es: ... (ej: Ser paciente y escuchar)" rows="3" maxlength="120"></textarea>
     <button id="btn">Dejar mi +1 — solo una vez por IP</button>
     <div id="msg" class="msg"></div>
-    <p style="font-size:10px;color:#666;margin-top:12px;letter-spacing:0.05em">Nota: En producción tu IP se hashea (SHA-256) antes de guardarse. Solo guardamos el hash, no tu IP directa.</p>
+    <p style="font-size:10px;color:#666;margin-top:12px;letter-spacing:0.05em">Nota: Tu IP se hashea (SHA-256) antes de guardarse. Solo guardamos el hash, no tu IP directa. Anti-spam real.</p>
   </div>
 
   <div class="lista">
     <h3>Códigos dejados — réplicas vivas</h3>
-    <div id="lista"></div>
-  </div>
-
-  <div style="margin-top:64px">
-    <h3 style="font-size:11px;letter-spacing:0.3em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;font-weight:400">Cómo implementarlo real en Netlify (anti-spam por IP)</h3>
-    <p style="font-size:11px;color:#666;margin-bottom:8px">Crea /netlify/functions/dejar-plus.js:</p>
-<pre>
-// netlify/functions/dejar-plus.js
-import { getStore } from "@netlify/blobs";
-import crypto from "crypto";
-
-export default async (req) => {
-  if (req.method !== "POST") return new Response("Method Not Allowed", {status:405});
-  
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-  const hashIp = crypto.createHash("sha256").update(ip).digest("hex");
-  
-  const store = getStore("codigos-plus");
-  const existe = await store.get(hashIp);
-  if (existe) {
-    return new Response(JSON.stringify({error: "Ya dejaste tu +1 desde esta IP"}), {status:409});
-  }
-
-  const { nombre, plus } = await req.json();
-  if(!nombre || !plus) return new Response("Faltan datos", {status:400});
-
-  await store.setJSON(hashIp, { nombre, plus, fecha: new Date().toISOString(), ipMask: ip.slice(0,3)+"•••" });
-  return new Response(JSON.stringify({ok:true}), {status:200});
-}
-</pre>
-    <p style="font-size:11px;color:#666">Y /netlify/functions/listar-plus.js para leer todos. Activa Netlify Blobs en tu dashboard. Listo.</p>
+    <div id="lista"><div style="color:#666;font-size:12px">Cargando códigos...</div></div>
   </div>
 
   <footer>
-    <span>código de amor propio +1 • v2</span>
+    <span>código de amor propio +1 • v2 real</span>
     <span>para mi hija y mi padre — ser reflexivo y no ceder</span>
   </footer>
 </div>
 
 <script>
-// SIMULACIÓN LOCAL - En producción esto lo hace la Function
-const KEY = "mi_plus_ya_dejado_v2";
+const API_LIST = "/.netlify/functions/listar-plus";
+const API_SEND = "/.netlify/functions/dejar-plus";
+
+const KEY_LOCAL = "mi_plus_ya_dejado_v2";
 const LISTA_KEY = "codigos_plus_mock";
 
 const mockInicial = [
-  {nombre:"Hija de Rosa", plus:"Mi +1 es: Escuchar antes de responder", meta:"hace 2h • 187.•••.21"},
-  {nombre:"Nieto de Don Chema", plus:"Mi +1 es: Trabajar cada día más", meta:"hace 5h • 200.•••.44"},
-  {nombre:"De Juárez", plus:"Mi +1 es: No ceder ante el miedo", meta:"ayer • 189.•••.09"}
+  {nombre:"Hija de Rosa", plus:"Mi +1 es: Escuchar antes de responder", fecha: new Date(Date.now()-2*3600000).toISOString(), ipMask:"187.•••.21"},
+  {nombre:"Nieto de Don Chema", plus:"Mi +1 es: Trabajar cada día más", fecha: new Date(Date.now()-5*3600000).toISOString(), ipMask:"200.•••.44"},
+  {nombre:"De Juárez", plus:"Mi +1 es: No ceder ante el miedo", fecha: new Date(Date.now()-24*3600000).toISOString(), ipMask:"189.•••.09"}
 ];
 
-function cargarLista(){
-  const data = JSON.parse(localStorage.getItem(LISTA_KEY) || "null") || mockInicial;
+function fmtFecha(iso){
+  try{
+    const d = new Date(iso);
+    const diff = (Date.now()-d.getTime())/1000;
+    if(diff < 60) return "ahora";
+    if(diff < 3600) return `hace ${Math.floor(diff/60)}m`;
+    if(diff < 86400) return `hace ${Math.floor(diff/3600)}h`;
+    return "hace " + d.toLocaleDateString("es-MX");
+  }catch(e){ return ""; }
+}
+
+function renderLista(items){
   const cont = document.getElementById("lista");
   cont.innerHTML = "";
-  data.slice().reverse().forEach(r=>{
+  if(!items || items.length===0){
+    cont.innerHTML = '<div style="color:#666;font-size:12px">Aún no hay códigos. Sé el primero, papá.</div>';
+    return;
+  }
+  items.slice().reverse().forEach(r=>{
     const div = document.createElement("div");
     div.className="item";
-    div.innerHTML = `<div class="plus"><strong>${r.nombre}:</strong> ${r.plus}</div><div class="meta">${r.meta||""}</div>`;
+    const fechaTxt = fmtFecha(r.fecha);
+    const meta = `${fechaTxt} • ${r.ipMask||""}`.trim();
+    div.innerHTML = `<div class="plus"><strong>${esc(r.nombre)}:</strong> ${esc(r.plus)}</div><div class="meta">${esc(meta)}</div>`;
     cont.appendChild(div);
   });
 }
 
+function esc(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+async function cargarLista(){
+  try{
+    const res = await fetch(API_LIST);
+    if(!res.ok) throw new Error("no api");
+    const data = await res.json();
+    if(Array.isArray(data) && data.length>0){
+      renderLista(data);
+      localStorage.setItem(LISTA_KEY, JSON.stringify(data));
+      return data;
+    } else {
+      // si api vacia, muestra mock + local
+      const local = JSON.parse(localStorage.getItem(LISTA_KEY)||"null");
+      renderLista(local || mockInicial);
+    }
+  }catch(e){
+    // Fallback GitHub Pages (sin funciones)
+    const local = JSON.parse(localStorage.getItem(LISTA_KEY)||"null");
+    renderLista(local || mockInicial);
+  }
+}
+
 function checkBloqueo(){
-  const ya = localStorage.getItem(KEY);
+  const ya = localStorage.getItem(KEY_LOCAL);
   if(ya){
     document.getElementById("btn").disabled = true;
     document.getElementById("btn").textContent = "Tu +1 ya quedó inmortal";
@@ -140,25 +150,64 @@ function checkBloqueo(){
   return false;
 }
 
-document.getElementById("btn").addEventListener("click", ()=>{
-  const nombre = document.getElementById("nombre").value.trim();
-  const plus = document.getElementById("plus").value.trim();
+document.getElementById("btn").addEventListener("click", async ()=>{
+  const nombreEl = document.getElementById("nombre");
+  const plusEl = document.getElementById("plus");
   const msg = document.getElementById("msg");
+  const btn = document.getElementById("btn");
+
+  const nombre = nombreEl.value.trim();
+  const plus = plusEl.value.trim();
 
   if(checkBloqueo()) return;
   if(!nombre || !plus){ msg.className="msg err"; msg.style.display="block"; msg.textContent="Escribe tu nombre y tu +1, papá."; return; }
 
-  // Guarda bloqueo por IP simulado
-  localStorage.setItem(KEY, JSON.stringify({nombre, plus, fecha: Date.now()}));
+  btn.disabled = true; btn.textContent = "Guardando...";
+  msg.style.display="none";
 
-  const lista = JSON.parse(localStorage.getItem(LISTA_KEY) || "null") || mockInicial;
-  lista.push({nombre, plus, meta:"ahora • tú • "+ (Math.floor(Math.random()*90)+10)+".•••."+Math.floor(Math.random()*99)});
-  localStorage.setItem(LISTA_KEY, JSON.stringify(lista));
-
-  msg.className="msg ok"; msg.style.display="block";
-  msg.textContent = "Tu +1 quedó inmortal. Gracias.";
-  cargarLista();
-  checkBloqueo();
+  try{
+    const res = await fetch(API_SEND, {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({nombre, plus})
+    });
+    const data = await res.json().catch(()=>({}));
+    if(res.status===409){
+      msg.className="msg err"; msg.style.display="block";
+      msg.textContent = "Ya dejaste tu +1 desde esta IP. Gracias, papá.";
+      localStorage.setItem(KEY_LOCAL, JSON.stringify({nombre, plus, fecha: Date.now()}));
+      checkBloqueo();
+      return;
+    }
+    if(!res.ok) throw new Error(data.error || "Error");
+    
+    msg.className="msg ok"; msg.style.display="block";
+    msg.textContent = "Tu +1 quedó inmortal. Gracias.";
+    localStorage.setItem(KEY_LOCAL, JSON.stringify({nombre, plus, fecha: Date.now()}));
+    // recargar lista
+    await cargarLista();
+    // optimista si api no responde lista aún
+    const listaLocal = JSON.parse(localStorage.getItem(LISTA_KEY)||"[]");
+    // la api ya lo guardó, pero por si fallback:
+    if(listaLocal.length < 100) {
+      // deja que el fetch de cargarLista lo traiga
+    }
+    checkBloqueo();
+  }catch(e){
+    // Fallback modo GitHub Pages (local)
+    console.log("Fallback local:", e);
+    localStorage.setItem(KEY_LOCAL, JSON.stringify({nombre, plus, fecha: Date.now()}));
+    const lista = JSON.parse(localStorage.getItem(LISTA_KEY) || "null") || mockInicial;
+    lista.push({nombre, plus, fecha: new Date().toISOString(), ipMask:"tú • "+ (Math.floor(Math.random()*90)+10)+".•••."+Math.floor(Math.random()*99)});
+    localStorage.setItem(LISTA_KEY, JSON.stringify(lista));
+    msg.className="msg ok"; msg.style.display="block";
+    msg.textContent = "Tu +1 quedó guardado local (modo demo). Para hacerlo global conéctalo a Netlify, papá.";
+    renderLista(lista);
+    checkBloqueo();
+  } finally {
+    btn.disabled = false;
+    if(!checkBloqueo()) btn.textContent = "Dejar mi +1 — solo una vez por IP";
+  }
 });
 
 cargarLista();
