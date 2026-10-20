@@ -1,5 +1,2 @@
-   [functions]
-     directory = "netlify/functions"
-
-   [[plugins]]
-     package = "@netlify/blobs"
+[functions]
+  directory = "netlify/functions"
