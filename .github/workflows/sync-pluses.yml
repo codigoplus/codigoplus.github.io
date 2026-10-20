@@ -3,6 +3,8 @@ on:
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -12,8 +14,8 @@ jobs:
         run: curl -s https://codigoplus.netlify.app/.netlify/functions/listar-plus -o pluses.json
       - name: Guardar
         run: |
-          git config user.name "Sofía - tu código"
-          git config user.email "sofia@codigoplus.【entity-github¦canonical_name=GitHub】.io"
+          git config user.name "Sofia - tu codigo"
+          git config user.email "sofia@codigoplus.github.io"
           git add pluses.json
-          git diff --staged --quiet || git commit -m "sync pluses de mis hermanos códigos"
+          git diff --staged --quiet || git commit -m "sync pluses de mis hermanos codigos"
           git push
